@@ -148,6 +148,66 @@ const getOrderProductItems = async({
     return productList
 }
 
+const finalizePaidSession = async(sessionId, userId) => {
+    const session = await Stripe.checkout.sessions.retrieve(sessionId)
+
+    if(session.payment_status !== 'paid' || session.metadata?.userId !== userId.toString()){
+        const error = new Error('Payment has not been completed')
+        error.statusCode = 400
+        throw error
+    }
+
+    const existingOrder = await OrderModel.findOne({ paymentId : session.payment_intent, userId : userId })
+    if(!existingOrder){
+        const lineItems = await Stripe.checkout.sessions.listLineItems(session.id)
+        const orderProduct = await getOrderProductItems({
+            lineItems : lineItems,
+            userId : userId,
+            addressId : session.metadata.addressId,
+            paymentId : session.payment_intent,
+            payment_status : session.payment_status,
+        })
+
+        if(orderProduct.length){
+            await OrderModel.insertMany(orderProduct)
+        }
+    }
+
+    await Promise.all([
+        UserModel.findByIdAndUpdate(userId, { shopping_cart : [] }),
+        CartProductModel.deleteMany({ userId : userId })
+    ])
+
+    return session
+}
+
+export async function finalizePaymentController(request,response){
+    try {
+        const { sessionId } = request.body
+        if(!sessionId){
+            return response.status(400).json({
+                message : 'Provide sessionId',
+                error : true,
+                success : false
+            })
+        }
+
+        await finalizePaidSession(sessionId, request.userId)
+
+        return response.json({
+            message : 'Payment verified and cart cleared',
+            error : false,
+            success : true
+        })
+    } catch (error) {
+        return response.status(error.statusCode || 500).json({
+            message : error.message || error,
+            error : true,
+            success : false
+        })
+    }
+}
+
 
 
 
@@ -162,26 +222,8 @@ export async function webhookStripe(request,response){
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object;
-      const lineItems = await Stripe.checkout.sessions.listLineItems(session.id)
       const userId = session.metadata.userId
-      const orderProduct = await getOrderProductItems(
-        {
-            lineItems : lineItems,
-            userId : userId,
-            addressId : session.metadata.addressId,
-            paymentId  : session.payment_intent,
-            payment_status : session.payment_status,
-        })
-    
-      const order = await OrderModel.insertMany(orderProduct)
-
-        console.log(order)
-        if(Boolean(order[0])){
-            const removeCartItems = await  UserModel.findByIdAndUpdate(userId,{
-                shopping_cart : []
-            })
-            const removeCartProductDB = await CartProductModel.deleteMany({ userId : userId})
-        }
+            await finalizePaidSession(session.id, userId)
       break;
     default:
       console.log(`Unhandled event type ${event.type}`);
@@ -201,6 +243,28 @@ export async function getOrderDetailsController(request,response){
 
         return response.json({
             message : "order list",
+            data : orderlist,
+            error : false,
+            success : true
+        })
+    } catch (error) {
+        return response.status(500).json({
+            message : error.message || error,
+            error : true,
+            success : false
+        })
+    }
+}
+
+export async function getAllOrderDetailsController(request,response){
+    try {
+        const orderlist = await OrderModel.find()
+            .sort({ createdAt : -1 })
+            .populate('userId', 'name email mobile')
+            .populate('delivery_address')
+
+        return response.json({
+            message : "all order list",
             data : orderlist,
             error : false,
             success : true

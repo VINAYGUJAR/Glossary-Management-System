@@ -1,9 +1,14 @@
 import React, { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import Axios from '../utils/Axios'
+import SummaryApi from '../common/SummaryApi'
+import { useGlobalContext } from '../provider/GlobalProvider'
+import AxiosToastError from '../utils/AxiosToastError'
 
 const Success = () => {
   const location = useLocation()
   const navigate = useNavigate()
+  const { fetchCartItem, fetchOrder } = useGlobalContext()
   const sessionId = new URLSearchParams(location.search).get('session_id')
   const successText = location?.state?.text || 'Payment'
 
@@ -13,6 +18,24 @@ const Success = () => {
 
     if (!hasValidRedirect && !hasOrderState) {
       navigate('/checkout', { replace: true })
+      return
+    }
+
+    if(hasValidRedirect){
+      const finalizePayment = async()=>{
+        try {
+          await Axios({
+            ...SummaryApi.finalizePayment,
+            data : { sessionId }
+          })
+          await fetchCartItem()
+          await fetchOrder()
+        } catch (error) {
+          AxiosToastError(error)
+        }
+      }
+
+      finalizePayment()
     }
   }, [location, sessionId, navigate])
 

@@ -16,19 +16,32 @@ const CheckoutPage = () => {
         const { notDiscountTotalPrice, totalPrice, totalQty, fetchCartItem,fetchOrder } = useGlobalContext()
   const [openAddress, setOpenAddress] = useState(false)
     const addressList = useSelector(state => state.addresses.addressList)
-     const [selectAddress, setSelectAddress] = useState(0)
+    const [selectAddress, setSelectAddress] = useState(null)
 //    console.log(addressList)
       const cartItemsList = useSelector(state => state.cartItem.cart)
   const navigate = useNavigate()
 
+      const getSelectedAddress = () => {
+        const selectedAddress = addressList[selectAddress]
+
+        if(!selectedAddress || !selectedAddress.status){
+          toast.error('Please select an address before payment')
+          return null
+        }
+
+        return selectedAddress
+      }
 
     const handleCashOnDelivery = async() => {
+          const selectedAddress = getSelectedAddress()
+          if(!selectedAddress) return
+
       try {
           const response = await Axios({
             ...SummaryApi.CashOnDeliveryOrder,
             data : {
               list_items : cartItemsList,
-              addressId : addressList[selectAddress]?._id,
+              addressId : selectedAddress._id,
               subTotalAmt : totalPrice,
               totalAmt :  totalPrice,
             }
@@ -57,6 +70,9 @@ const CheckoutPage = () => {
   }
 
     const handleOnlinePayment = async()=>{
+    const selectedAddress = getSelectedAddress()
+    if(!selectedAddress) return
+
     try {
         toast.loading("Loading...")
         const stripePublicKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY
@@ -66,7 +82,7 @@ const CheckoutPage = () => {
             ...SummaryApi.payment_url,
             data : {
               list_items : cartItemsList,
-              addressId : addressList[selectAddress]?._id,
+              addressId : selectedAddress._id,
               subTotalAmt : totalPrice,
               totalAmt :  totalPrice,
             }
@@ -76,12 +92,6 @@ const CheckoutPage = () => {
 
         stripePromise.redirectToCheckout({ sessionId : responseData.id })
         
-        if(fetchCartItem){
-          fetchCartItem()
-        }
-        if(fetchOrder){
-          fetchOrder()
-        }
     } catch (error) {
         AxiosToastError(error)
     }

@@ -150,8 +150,16 @@ const SummaryApi = {
         url : "/api/order/checkout",
         method : 'post'
     },
+    finalizePayment : {
+        url : "/api/order/payment-success",
+        method : 'post'
+    },
     getOrderItems : {
         url : '/api/order/order-list',
+        method : 'get'
+    },
+    getAllOrderItems : {
+        url : '/api/order/all-orders',
         method : 'get'
     }
 }
